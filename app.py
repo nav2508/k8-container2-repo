@@ -1,35 +1,86 @@
 from flask import Flask, request, jsonify
 import os
+import csv
 
 app = Flask(__name__)
 
 # Persistent volume path
 PERSISTENT_STORAGE = "/Navya_PV_dir"
 
-@app.route('/compute', methods=['POST'])
-def compute():
-    data = request.get_json()
-    
-    if "file" not in data or "product" not in data:
-        return jsonify({"file": None, "error": "Invalid JSON input."}), 400
-
-    file_path = os.path.join(PERSISTENT_STORAGE, data["file"])
-
-    if not os.path.exists(file_path):
-        return jsonify({"file": data["file"], "error": "File not found."}), 404
-
+def read_and_validate_csv(file_path):
+    """Read and validate CSV file, return data if valid"""
     try:
-        total = 0
-        with open(file_path, "r") as f:
-            lines = f.readlines()[1:]  # Skip header
-            for line in lines:
-                product, amount = line.strip().split(',')
-                if product == data["product"]:
-                    total += int(amount)
+        with open(file_path, 'r') as csvfile:
+            reader = csv.DictReader(csvfile)
+            headers = reader.fieldnames
 
-        return jsonify({"file": data["file"], "sum": total}), 200
-    except:
-        return jsonify({"file": data["file"], "error": "Input file not in CSV format."}), 400
+            if not headers or "product" not in headers or "amount" not in headers:
+                raise ValueError("Input file not in CSV format.")
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+            # Reset file pointer to read rows correctly
+            csvfile.seek(0)
+            next(reader)  # Skip the header row
+
+            data = []
+            for row in reader:
+                try:
+                    product = row["product"].strip().lower()  # ✅ Normalize product name
+                    amount = float(row["amount"].strip()) if row["amount"].strip() else 0  # Convert amount to float
+                except ValueError:
+                    amount = 0  # Default to 0 if conversion fails
+                
+                data.append({"product": product, "amount": amount})
+
+            print(f"✅ CSV Data Extracted: {data}")  # ✅ Debugging Log
+            return data
+    except Exception:
+        raise ValueError("Input file not in CSV format.")
+
+@app.route("/compute", methods=["POST"])
+def compute():
+    try:
+        # ✅ Validate JSON input
+        data = request.get_json()
+
+        # ✅ Explicitly check for missing or None request body
+        if data is None:
+            print("❌ No JSON body received!")
+            return jsonify({"file": None, "error": "Missing JSON body.", "sum": 0}), 400
+        
+        if not isinstance(data, dict) or "file" not in data or "product" not in data:
+            print("❌ Invalid JSON structure!")
+            return jsonify({"file": None, "error": "Invalid JSON input.", "sum": 0}), 400
+
+        file_name = data["file"]
+        product = data["product"].strip().lower()  # ✅ Normalize product name
+        file_path = os.path.join(PERSISTENT_STORAGE, file_name)
+
+        # ✅ Check if file exists
+        if not os.path.isfile(file_path):
+            print(f"❌ File Not Found: {file_path}")
+            return jsonify({"file": file_name, "error": "File not found.", "sum": 0}), 404
+
+        try:
+            csv_data = read_and_validate_csv(file_path)
+        except ValueError as e:
+            print(f"❌ CSV Read Error: {e}")
+            return jsonify({"file": file_name, "error": str(e), "sum": 0}), 400
+
+        # ✅ Debug Log: Print Extracted CSV Data
+        print(f"✅ Extracted CSV Data: {csv_data}")
+
+        # ✅ Calculate sum for specified product (case-insensitive)
+        total = sum(row["amount"] for row in csv_data if row["product"] == product)
+
+        print(f"✅ Computed Sum for {product}: {total}")  # ✅ Debug Log
+
+        return jsonify({"file": file_name, "sum": int(total)}), 200
+
+    except Exception as e:
+        print(f"🔥 Unexpected Error: {e}")  # ✅ Debug Log
+        return jsonify({"file": None, "error": str(e), "sum": 0}), 500
+
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001)

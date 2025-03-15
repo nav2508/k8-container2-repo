@@ -12,6 +12,8 @@ spec:
       labels:
         app: container2
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: gke-gke-standard-clu-primary-node-poo-bb4eedc1-gpsc  # Ensure the pod runs on the correct node
       containers:
       - name: container2
         image: us-central1-docker.pkg.dev/k8s-microservices-project/k8-container2-repo/container2:latest
@@ -23,5 +25,4 @@ spec:
       volumes:
       - name: storage
         persistentVolumeClaim:
-          claimName: navya-pvc  # Use the PVC for storage
----
+          claimName: navya-pvc
